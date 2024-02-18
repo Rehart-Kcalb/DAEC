@@ -10,7 +10,7 @@ import (
 
 // Expression represents a mathematical expression.
 
-func processExpression(exprStr string) error {
+func ProcessExpression(exprStr string) error {
 	expr, err := parser.ParseExpr(exprStr)
 	if err != nil {
 		return err

@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/Rehart-Kcalb/DAEC/Orchestrator/internal/parser"
 )
 
 type AddExpression struct{}
@@ -29,7 +31,7 @@ func (s AddExpression) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call parser from ../parser/parser.go
-	err = parser.processExpression(data.Expression) // Assuming parseExpression is exported from ../parser/parser.go
+	err = parser.ProcessExpression(data.Expression) // Assuming parseExpression is exported from ../parser/parser.go
 	if err != nil {
 		// Handle parsing errors
 		http.Error(w, "Error parsing expression", http.StatusBadRequest)
