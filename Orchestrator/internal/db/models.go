@@ -59,7 +59,7 @@ type OperationSymbol string
 
 const (
 	OperationSymbolValue0 OperationSymbol = "+"
-	OperationSymbolValue1 OperationSymbol = "-"
+	OperationSymbolValue1       OperationSymbol = "-"
 	OperationSymbolValue2 OperationSymbol = "*"
 	OperationSymbolValue3 OperationSymbol = "/"
 )
@@ -103,7 +103,7 @@ type Expression struct {
 	ID           int64              `json:"id"`
 	Expression   string             `json:"expression"`
 	Status       ExpressionStatus   `json:"status"`
-	Result       pgtype.Float8      `json:"result"`
+	Result       float64            `json:"result"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	CalculatedAt pgtype.Timestamptz `json:"calculated_at"`
 }
@@ -115,11 +115,15 @@ type Operation struct {
 }
 
 type SubExpression struct {
-	ID           int64         `json:"id"`
-	ExpressionID int64         `json:"expression_id"`
-	Expression   string        `json:"expression"`
-	ExecOrder    int32         `json:"exec_order"`
-	Result       pgtype.Float8 `json:"result"`
+	ID           int64            `json:"id"`
+	ExpressionID int64            `json:"expression_id"`
+	Operand1     string           `json:"operand1"`
+	Operand2     string           `json:"operand2"`
+	Operation    OperationSymbol  `json:"operation"`
+	Cost         int32            `json:"cost"`
+	ExecOrder    int32            `json:"exec_order"`
+	Status       ExpressionStatus `json:"status"`
+	Result       float64          `json:"result"`
 }
 
 type TakenExpression struct {

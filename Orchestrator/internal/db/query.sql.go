@@ -57,6 +57,30 @@ func (q *Queries) GetAgentExpressions(ctx context.Context, agent string) ([]Take
 	return items, nil
 }
 
+const getAgents = `-- name: GetAgents :many
+SELECT agent from taken_expressions
+`
+
+func (q *Queries) GetAgents(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getAgents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var agent string
+		if err := rows.Scan(&agent); err != nil {
+			return nil, err
+		}
+		items = append(items, agent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getExpression = `-- name: GetExpression :one
 SELECT id, expression, status, result, created_at, calculated_at FROM expressions
 WHERE id = $1
@@ -108,7 +132,7 @@ func (q *Queries) GetExpressions(ctx context.Context) ([]Expression, error) {
 }
 
 const getOperations = `-- name: GetOperations :many
-SELECT id, operation, cost from operations
+SELECT id, operation, cost FROM operations
 `
 
 func (q *Queries) GetOperations(ctx context.Context) ([]Operation, error) {
@@ -132,7 +156,7 @@ func (q *Queries) GetOperations(ctx context.Context) ([]Operation, error) {
 }
 
 const getSubexpressions = `-- name: GetSubexpressions :many
-SELECT se.id, se.expression_id, se.expression, se.exec_order, se.result
+SELECT se.id, se.expression_id, se.operand1, se.operand2, se.operation, se.cost, se.exec_order, se.status, se.result
 FROM sub_expressions se
 INNER JOIN expressions e ON se.expression_id = e.id
 WHERE e.id = $1
@@ -150,8 +174,12 @@ func (q *Queries) GetSubexpressions(ctx context.Context, id int64) ([]SubExpress
 		if err := rows.Scan(
 			&i.ID,
 			&i.ExpressionID,
-			&i.Expression,
+			&i.Operand1,
+			&i.Operand2,
+			&i.Operation,
+			&i.Cost,
 			&i.ExecOrder,
+			&i.Status,
 			&i.Result,
 		); err != nil {
 			return nil, err
@@ -164,15 +192,34 @@ func (q *Queries) GetSubexpressions(ctx context.Context, id int64) ([]SubExpress
 	return items, nil
 }
 
+const getTask = `-- name: GetTask :one
+SELECT id, expression, status, result, created_at, calculated_at FROM expressions
+WHERE status = 'wait' LIMIT 1
+`
+
+func (q *Queries) GetTask(ctx context.Context) (Expression, error) {
+	row := q.db.QueryRow(ctx, getTask)
+	var i Expression
+	err := row.Scan(
+		&i.ID,
+		&i.Expression,
+		&i.Status,
+		&i.Result,
+		&i.CreatedAt,
+		&i.CalculatedAt,
+	)
+	return i, err
+}
+
 const inputResultExpression = `-- name: InputResultExpression :exec
 UPDATE expressions
-SET result = $2, status = 'done'
+SET result = $2, status = 'done' , calculated_at = now()
 WHERE id = $1
 `
 
 type InputResultExpressionParams struct {
-	ID     int64         `json:"id"`
-	Result pgtype.Float8 `json:"result"`
+	ID     int64   `json:"id"`
+	Result float64 `json:"result"`
 }
 
 func (q *Queries) InputResultExpression(ctx context.Context, arg InputResultExpressionParams) error {
@@ -182,13 +229,13 @@ func (q *Queries) InputResultExpression(ctx context.Context, arg InputResultExpr
 
 const inputResultSubExpression = `-- name: InputResultSubExpression :exec
 UPDATE sub_expressions
-SET result = $2
+SET result = $2 , status = 'done'
 WHERE id = $1
 `
 
 type InputResultSubExpressionParams struct {
-	ID     int64         `json:"id"`
-	Result pgtype.Float8 `json:"result"`
+	ID     int64   `json:"id"`
+	Result float64 `json:"result"`
 }
 
 func (q *Queries) InputResultSubExpression(ctx context.Context, arg InputResultSubExpressionParams) error {
@@ -216,17 +263,28 @@ func (q *Queries) InsertExpression(ctx context.Context, arg InsertExpressionPara
 }
 
 const insertSubExpression = `-- name: InsertSubExpression :exec
-INSERT INTO sub_expressions(expression_id,expression)
-VALUES ($1,$2)
+INSERT INTO sub_expressions(expression_id,operand1,operation,operand2,cost,exec_order)
+VALUES ($1,$2,$3,$4,$5,$6)
 `
 
 type InsertSubExpressionParams struct {
-	ExpressionID int64  `json:"expression_id"`
-	Expression   string `json:"expression"`
+	ExpressionID int64           `json:"expression_id"`
+	Operand1     string          `json:"operand1"`
+	Operation    OperationSymbol `json:"operation"`
+	Operand2     string          `json:"operand2"`
+	Cost         int32           `json:"cost"`
+	ExecOrder    int32           `json:"exec_order"`
 }
 
 func (q *Queries) InsertSubExpression(ctx context.Context, arg InsertSubExpressionParams) error {
-	_, err := q.db.Exec(ctx, insertSubExpression, arg.ExpressionID, arg.Expression)
+	_, err := q.db.Exec(ctx, insertSubExpression,
+		arg.ExpressionID,
+		arg.Operand1,
+		arg.Operation,
+		arg.Operand2,
+		arg.Cost,
+		arg.ExecOrder,
+	)
 	return err
 }
 
@@ -243,6 +301,58 @@ type InsertTakenParams struct {
 
 func (q *Queries) InsertTaken(ctx context.Context, arg InsertTakenParams) error {
 	_, err := q.db.Exec(ctx, insertTaken, arg.ExpressionID, arg.Agent, arg.Calculator)
+	return err
+}
+
+const monitor = `-- name: Monitor :many
+SELECT t.agent,t.calculator,e.expression,e.status 
+FROM taken_expressions t 
+RIGHT JOIN expressions e ON expressions.id = t.expression_id
+`
+
+type MonitorRow struct {
+	Agent      pgtype.Text      `json:"agent"`
+	Calculator pgtype.Int4      `json:"calculator"`
+	Expression string           `json:"expression"`
+	Status     ExpressionStatus `json:"status"`
+}
+
+func (q *Queries) Monitor(ctx context.Context) ([]MonitorRow, error) {
+	rows, err := q.db.Query(ctx, monitor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MonitorRow
+	for rows.Next() {
+		var i MonitorRow
+		if err := rows.Scan(
+			&i.Agent,
+			&i.Calculator,
+			&i.Expression,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateExpressionStatus = `-- name: UpdateExpressionStatus :exec
+UPDATE expressions SET status = $2 WHERE id = $1
+`
+
+type UpdateExpressionStatusParams struct {
+	ID     int64            `json:"id"`
+	Status ExpressionStatus `json:"status"`
+}
+
+func (q *Queries) UpdateExpressionStatus(ctx context.Context, arg UpdateExpressionStatusParams) error {
+	_, err := q.db.Exec(ctx, updateExpressionStatus, arg.ID, arg.Status)
 	return err
 }
 

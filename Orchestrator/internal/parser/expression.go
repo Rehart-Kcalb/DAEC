@@ -1,9 +1,9 @@
 package parser
 
 type Expression struct {
-	LeftOperand   string
-	Operator      string
-	RightOperand  string
-	Result        int
-	DependencyPtr *Expression
+	Operand1 string
+	Operator string
+	Operand2 string
+	Cost     int
+	Result   int
 }

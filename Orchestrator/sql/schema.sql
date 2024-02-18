@@ -4,7 +4,7 @@ CREATE TABLE expressions (
     id BIGSERIAL PRIMARY KEY,
     expression text NOT NULL,
     status expression_status NOT NULL,
-    result double precision ,
+    result DOUBLE PRECISION NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
     calculated_at timestamptz
 );
@@ -20,9 +20,13 @@ CREATE TABLE operations (
 CREATE TABLE sub_expressions (
     id BIGSERIAL PRIMARY KEY,
     expression_id bigint NOT NULL REFERENCES expressions(id),
-    expression text NOT NULL,
+    operand1 text NOT NULL,
+    operand2 text NOT NULL,
+    operation operation_symbol NOT NULL,
+    cost int NOT NULL,
     exec_order int NOT NULL,
-    result double precision
+    status expression_status NOT NULL DEFAULT 'wait',
+    result DOUBLE PRECISION  NOT NULL DEFAULT 0
 );
 
 CREATE TABLE taken_expressions (
@@ -30,3 +34,6 @@ CREATE TABLE taken_expressions (
     agent text NOT NULL,
     calculator int NOT NULL
 );
+
+INSERT INTO operations(operation,cost)
+VALUES ('+',1),('-',1),('*',1),('/',1);
